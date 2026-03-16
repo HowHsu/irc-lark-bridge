@@ -1,0 +1,2 @@
+httpx>=0.25
+lark-oapi>=1.4.0
