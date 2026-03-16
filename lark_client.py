@@ -1,4 +1,5 @@
 """Lark WebSocket client + send API. Uses lark-oapi for WS, httpx for HTTP."""
+import asyncio
 import json
 import logging
 import threading
@@ -191,6 +192,9 @@ class LarkClient:
                 logger.exception("Lark handler: %s", e)
 
         def _run():
+            # lark-oapi 使用 asyncio，必须在独立线程中创建自己的事件循环
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             handler = (
                 EventDispatcherHandler.builder("", "")
                 .register_p2_im_message_receive_v1(_handler)
