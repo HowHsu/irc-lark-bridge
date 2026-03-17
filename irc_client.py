@@ -80,14 +80,14 @@ class IrcClient:
         server: str,
         port: int,
         nick: str,
-        channel: str,
+        channels: list[str],
         sasl_password: str,
         on_privmsg: Callable[[str, str, str], Coroutine[Any, Any, None]],
     ):
         self.server = server
         self.port = port
         self.nick = nick
-        self.channel = channel
+        self.channels = list(channels) if channels else []
         self.sasl_password = sasl_password
         self.on_privmsg = on_privmsg
         self._writer: asyncio.StreamWriter | None = None
@@ -176,7 +176,9 @@ class IrcClient:
                     elif cmd == "001":
                         registered = True
                         logger.info("IRC registered as %s", self.nick)
-                        self._send(f"JOIN {self.channel}")
+                        for ch in self.channels:
+                            if ch:
+                                self._send(f"JOIN {ch}")
 
                     elif cmd == "PRIVMSG" and len(params) >= 2:
                         target, msg = params[0], params[1]

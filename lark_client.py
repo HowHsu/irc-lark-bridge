@@ -28,6 +28,60 @@ LARK_WS_BASE = "https://open.larksuite.com"
 FEISHU_WS_BASE = "https://open.feishu.cn"
 
 
+def resolve_chat_name_to_id(
+    name_or_id: str,
+    base_url: str,
+    app_id: str,
+    app_secret: str,
+) -> str | None:
+    """将群名解析为 chat_id。若已是 chat_id（以 oc_ 开头）则直接返回。"""
+    s = (name_or_id or "").strip()
+    if not s:
+        return None
+    if s.startswith("oc_"):
+        return s
+    # 调用群搜索 API
+    token_url = f"{base_url.rstrip('/')}/auth/v3/tenant_access_token/internal"
+    search_url = f"{base_url.rstrip('/')}/im/v1/chats/search"
+    with httpx.Client(timeout=15) as c:
+        r = c.post(
+            token_url,
+            json={"app_id": app_id, "app_secret": app_secret},
+            headers={"Content-Type": "application/json"},
+        )
+        r.raise_for_status()
+        td = r.json()
+        if td.get("code") != 0:
+            logger.warning("Lark token for resolve: %s", td)
+            return None
+        token = td["tenant_access_token"]
+        page_token = ""
+        while True:
+            params = {"query": s[:64], "page_size": 100}
+            if page_token:
+                params["page_token"] = page_token
+            r2 = c.get(
+                search_url,
+                params=params,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            r2.raise_for_status()
+            data = r2.json()
+            if data.get("code") != 0:
+                logger.warning("Lark chat search failed: %s", data)
+                return None
+            items = (data.get("data") or {}).get("items") or []
+            for item in items:
+                if (item.get("name") or "").strip() == s:
+                    return item.get("chat_id")
+            if len(items) == 1 and not page_token:
+                return items[0].get("chat_id")
+            page_token = (data.get("data") or {}).get("page_token", "")
+            if not (data.get("data") or {}).get("has_more") or not page_token:
+                break
+    return None
+
+
 class LarkClient:
     """Lark WebSocket receive + HTTP send. Runs WS in separate thread."""
 
@@ -35,25 +89,25 @@ class LarkClient:
         self,
         app_id: str,
         app_secret: str,
-        chat_id: str,
+        chat_ids: set[str] | list[str],
         use_feishu: bool = False,
         lark_domain: str = "",
         mention_only: bool = True,
-        on_message: Callable[[str, str], None] | None = None,
+        on_message: Callable[[str, str, str], None] | None = None,
     ):
         self.app_id = app_id
         self.app_secret = app_secret
-        self.chat_id = chat_id
+        self.chat_ids = set(chat_ids) if chat_ids else set()
         self.use_feishu = use_feishu
         self._domain_override = lark_domain
         self._mention_only = mention_only
         self._base = FEISHU_BASE if use_feishu else LARK_BASE
         self._ws_base = FEISHU_WS_BASE if use_feishu else LARK_WS_BASE
         self._locale = "zh" if use_feishu else "en"
-        self.on_message = on_message or (lambda n, t: None)
+        self.on_message = on_message or (lambda c, n, t: None)
         self._token: str | None = None
         self._token_expire = 0.0
-        self._received_queue: Queue[tuple[str, str]] = Queue()
+        self._received_queue: Queue[tuple[str, str, str]] = Queue()
         self._ws_thread: threading.Thread | None = None
 
     def _get_token(self) -> str:
@@ -94,8 +148,8 @@ class LarkClient:
         bot = data.get("bot") or data.get("data", {}).get("bot") or {}
         return bot.get("open_id")
 
-    def send_text(self, text: str) -> None:
-        """Send text to the configured chat."""
+    def send_text(self, chat_id: str, text: str) -> None:
+        """Send text to the specified chat."""
         url = f"{self._base}/im/v1/messages?receive_id_type=chat_id"
         with httpx.Client(timeout=10) as c:
             r = c.post(
@@ -105,7 +159,7 @@ class LarkClient:
                     "Content-Type": "application/json",
                 },
                 json={
-                    "receive_id": self.chat_id,
+                    "receive_id": chat_id,
                     "msg_type": "text",
                     "content": json.dumps({"text": text}),
                 },
@@ -115,8 +169,8 @@ class LarkClient:
         if data.get("code") != 0:
             raise RuntimeError(f"Lark send failed: {data}")
 
-    def drain_received(self) -> list[tuple[str, str]]:
-        """Drain queued messages received from Lark (to forward to IRC)."""
+    def drain_received(self) -> list[tuple[str, str, str]]:
+        """Drain queued messages: (chat_id, open_id, text)."""
         out = []
         while True:
             try:
@@ -128,7 +182,7 @@ class LarkClient:
     def run_ws_thread(self) -> None:
         """Start Lark WebSocket. 使用原生实现（正确 locale），参考 Zeroclaw。"""
         bot_open_id = self._get_bot_open_id()
-        logger.info("Lark bot open_id: %s, chat_id: %s", bot_open_id or "(none)", self.chat_id)
+        logger.info("Lark bot open_id: %s, chat_ids: %s", bot_open_id or "(none)", self.chat_ids)
 
         def _is_mention(ev: dict) -> bool:
             if not bot_open_id:
@@ -162,9 +216,9 @@ class LarkClient:
                 msg = ev_body.get("message", {})
                 chat_id = msg.get("chat_id", "")
                 chat_type = msg.get("chat_type", "")
-                logger.debug("Lark event: chat_id=%s (expect %s), chat_type=%s", chat_id, self.chat_id, chat_type)
-                if chat_id != self.chat_id:
-                    logger.debug("Lark: skip (chat_id mismatch)")
+                logger.debug("Lark event: chat_id=%s (allowed %s), chat_type=%s", chat_id, self.chat_ids, chat_type)
+                if chat_id not in self.chat_ids:
+                    logger.debug("Lark: skip (chat_id not in bridges)")
                     return
                 if self._mention_only and chat_type == "group" and not _is_mention(ev):
                     mids = [(m.get("id") or {}).get("open_id") or m.get("open_id") for m in msg.get("mentions", [])]
@@ -189,8 +243,8 @@ class LarkClient:
                 sid = sender.get("sender_id", {})
                 open_id = sid.get("open_id", "?")
                 logger.info("Lark -> IRC: forwarding %r", text[:50])
-                self._received_queue.put((open_id, text))
-                self.on_message(open_id, text)
+                self._received_queue.put((chat_id, open_id, text))
+                self.on_message(chat_id, open_id, text)
             except Exception as e:
                 logger.exception("Lark event handler: %s", e)
 

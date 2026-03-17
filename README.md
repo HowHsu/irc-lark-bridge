@@ -22,7 +22,8 @@ python3 -m venv .venv
 | `IRC_SERVER` | IRC 服务器 | `irc.libera.chat` |
 | `IRC_PORT` | 端口 (TLS) | `6697` |
 | `IRC_NICK` | Bot 昵称 | `irc-lark-bridge` |
-| `IRC_CHANNEL` | 频道 | `#bitcoin-core-dev` |
+| `IRC_CHANNEL` | 单对模式下的 IRC 频道 | `#bitcoin-core-dev` |
+| `BRIDGE_PAIRS` | 多对桥接：`chat_id1:channel1,chat_id2:channel2` | 见下方 |
 | `IRC_SASL_PASSWORD` | Libera 账号密码（必填，否则无法发消息） | |
 | `LARK_APP_ID` | 飞书应用 App ID | |
 | `LARK_APP_SECRET` | 飞书应用 App Secret | |
@@ -31,6 +32,24 @@ python3 -m venv .venv
 | `LARK_DOMAIN` | 可选，覆盖域名，如 `https://open.feishu.cn` | |
 | `LARK_MENTION_ONLY` | 1=仅转发 @机器人 的消息，0=转发群内所有消息 | `1` |
 | `DEBUG` | 1=开启 DEBUG 日志 | |
+
+### 多对桥接（Lark 群 ↔ IRC 频道）
+
+设置 `BRIDGE_PAIRS` 可同时桥接多对：
+
+```bash
+# 使用群名（推荐，需 im:chat 或 im:chat:readonly 权限）
+BRIDGE_PAIRS="Bitcoin开发群:#bitcoin-core-dev,其他群:#other-channel"
+
+# 或使用 chat_id
+BRIDGE_PAIRS="oc_xxx:#bitcoin-core-dev,oc_yyy:#other-channel"
+```
+
+每对格式为 `群名或chat_id:irc_channel`，逗号分隔。支持**群名**或 **chat_id**（以 `oc_` 开头）：
+- **群名**：启动时自动调用 Lark 群搜索 API 解析为 chat_id，需应用具备 `im:chat` 或 `im:chat:readonly` 权限
+- **chat_id**：直接使用，无需额外权限
+
+机器人需已加入所有 Lark 群。未设置 `BRIDGE_PAIRS` 时，沿用 `LARK_CHAT_ID` + `IRC_CHANNEL` 单对模式。
 
 ### 获取 LARK_CHAT_ID
 
@@ -47,8 +66,9 @@ python3 -m venv .venv
 
 1. [Lark 开放平台](https://open.larksuite.com/) 创建企业自建应用
 2. 权限：`im:message`、`im:message:send_as_bot`、`im:message.group_at_msg`
-3. 事件订阅：`im.message.receive_v1`，选择 **使用长连接接收事件**
-4. 将机器人加入目标群
+3. 若使用**群名**配置 `BRIDGE_PAIRS`，还需 `im:chat` 或 `im:chat:readonly`（用于群搜索）
+4. 事件订阅：`im.message.receive_v1`，选择 **使用长连接接收事件**
+5. 将机器人加入目标群
 
 ### 在 Lark 中执行 IRC 命令
 
