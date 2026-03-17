@@ -23,7 +23,7 @@ irc_ref: IrcClient | None = None
 async def run_bridge(cfg: Config, lark: LarkClient) -> None:
     global irc_ref
 
-    def on_irc_privmsg(sender: str, target: str, msg: str) -> None:
+    async def on_irc_privmsg(sender: str, target: str, msg: str) -> None:
         """IRC -> Lark: forward channel messages to all mapped Lark groups."""
         try:
             chat_ids = cfg.chat_ids_for_channel(target)
