@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 irc_ref: IrcClient | None = None
 
 
-async def run_bridge(cfg: Config) -> None:
+async def run_bridge(cfg: Config, lark: LarkClient) -> None:
     global irc_ref
 
     def on_irc_privmsg(sender: str, target: str, msg: str) -> None:
@@ -28,14 +28,6 @@ async def run_bridge(cfg: Config) -> None:
             lark.send_text(f"[IRC] <{sender}> {msg}")
         except Exception as e:
             logger.exception("Lark send: %s", e)
-
-    lark = LarkClient(
-        app_id=cfg.lark_app_id,
-        app_secret=cfg.lark_app_secret,
-        chat_id=cfg.lark_chat_id,
-        use_feishu=cfg.lark_use_feishu,
-    )
-    lark.run_ws_thread()
 
     irc_ref = IrcClient(
         server=cfg.irc_server,
@@ -70,6 +62,16 @@ def main() -> int:
             logger.error("%s", e)
         return 1
 
+    lark = LarkClient(
+        app_id=cfg.lark_app_id,
+        app_secret=cfg.lark_app_secret,
+        chat_id=cfg.lark_chat_id,
+        use_feishu=cfg.lark_use_feishu,
+        lark_domain=cfg.lark_domain,
+    )
+    # 必须在主事件循环启动之前启动 Lark 线程，否则 lark-oapi 会获取到主循环
+    lark.run_ws_thread()
+
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
@@ -79,7 +81,7 @@ def main() -> int:
         loop.stop()
 
     try:
-        task = loop.create_task(run_bridge(cfg))
+        task = loop.create_task(run_bridge(cfg, lark))
         signal.signal(signal.SIGINT, stop)
         signal.signal(signal.SIGTERM, stop)
         loop.run_until_complete(task)

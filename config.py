@@ -17,6 +17,7 @@ class Config:
     lark_app_secret: str = ""
     lark_chat_id: str = ""  # Lark group chat_id to send to
     lark_use_feishu: bool = False  # True = open.feishu.cn
+    lark_domain: str = ""  # 可选覆盖，如 https://open.feishu.cn
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -30,6 +31,7 @@ class Config:
             lark_app_secret=os.getenv("LARK_APP_SECRET", ""),
             lark_chat_id=os.getenv("LARK_CHAT_ID", ""),
             lark_use_feishu=os.getenv("LARK_USE_FEISHU", "0").lower() in ("1", "true", "yes"),
+            lark_domain=os.getenv("LARK_DOMAIN", ""),
         )
 
     def validate(self) -> list[str]:

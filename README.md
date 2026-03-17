@@ -27,7 +27,8 @@ python3 -m venv .venv
 | `LARK_APP_ID` | 飞书应用 App ID | |
 | `LARK_APP_SECRET` | 飞书应用 App Secret | |
 | `LARK_CHAT_ID` | 目标 Lark 群聊 chat_id | |
-| `LARK_USE_FEISHU` | 1=使用飞书国内版 | `0` |
+| `LARK_USE_FEISHU` | 1=使用飞书国内版 (open.feishu.cn) | `0` |
+| `LARK_DOMAIN` | 可选，覆盖域名，如 `https://open.feishu.cn` | |
 
 ### 获取 LARK_CHAT_ID
 
@@ -47,6 +48,10 @@ python3 -m venv .venv
 3. 事件订阅：`im.message.receive_v1`，选择 **使用长连接接收事件**
 4. 将机器人加入目标群
 
+### 报错 "Incorrect domain name"
+
+应用所在平台与域名不一致。飞书国内版应用需设置 `LARK_USE_FEISHU=1`，或显式指定 `LARK_DOMAIN=https://open.feishu.cn`。
+
 ## 运行
 
 ```bash
@@ -57,6 +62,8 @@ python3 -m venv .venv
 
 ```bash
 docker build -t irc-lark-bridge .
+# 强制重新 clone 最新代码（保留 apt/pip 缓存）:
+# docker build --build-arg CACHE_BUST=$(date +%s) -t irc-lark-bridge .
 docker run --rm \
   -e IRC_NICK=irc-lark-bridge \
   -e IRC_SASL_PASSWORD=xxx \
