@@ -50,6 +50,22 @@ python3 -m venv .venv
 3. 事件订阅：`im.message.receive_v1`，选择 **使用长连接接收事件**
 4. 将机器人加入目标群
 
+### 在 Lark 中执行 IRC 命令
+
+在 Lark 群内 @机器人 后，若消息以 `/` 开头，会被解析为 IRC 命令并执行（会改变整个桥接的 IRC 连接状态）：
+
+| 命令 | 示例 | 说明 |
+|------|------|------|
+| `/nick` | `/nick 新昵称` | 修改 IRC 昵称 |
+| `/join` | `/join #channel` | 加入频道 |
+| `/part` | `/part` 或 `/part #channel` | 离开当前/指定频道 |
+| `/quit` | `/quit 再见` | 断开连接 |
+| `/msg` | `/msg nick 私信内容` | 发送私信 |
+| `/me` | `/me 挥手` | 发送动作（/me 格式） |
+| `/raw` | `/raw WHO #channel` | 发送任意原始 IRC 命令 |
+
+**注意**：桥接是单用户，`/nick` 会改变整个桥接的 IRC 昵称，影响所有 Lark 用户发出的消息。
+
 ### 在 Lark 中 @IRC 频道里的人
 
 IRC 没有原生 @提及。在 Lark 发消息时，若要指定某位 IRC 用户，可在消息中直接写其昵称，例如：`willy: 你好` 或 `willy, 你的问题...`。该用户会在 IRC 频道中看到自己的昵称被提及。

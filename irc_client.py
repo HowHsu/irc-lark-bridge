@@ -98,6 +98,12 @@ class IrcClient:
             self._writer.write(f"{line}\r\n".encode())
             logger.debug("IRC> %s", line)
 
+    def send_raw(self, line: str) -> None:
+        """发送原始 IRC 命令（如 NICK、JOIN 等）。"""
+        line = line.strip()
+        if line:
+            self._send(line)
+
     async def send_privmsg(self, target: str, text: str) -> None:
         # IRC max 512 bytes; keep ~64 for prefix
         max_len = 400

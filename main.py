@@ -42,12 +42,50 @@ async def run_bridge(cfg: Config, lark: LarkClient) -> None:
         on_privmsg=on_irc_privmsg,
     )
 
+    def handle_lark_message(text: str) -> bool:
+        """处理 Lark 消息：若以 / 开头则作为 IRC 命令执行，返回 True；否则返回 False 表示需按 PRIVMSG 发送。"""
+        t = text.strip()
+        if not t.startswith("/"):
+            return False
+        parts = t[1:].split(None, 1)  # 去掉首 /，按空白分割最多 2 段
+        cmd = (parts[0] or "").upper()
+        rest = (parts[1] or "").strip()
+        if not cmd:
+            return False
+        # 常用 IRC 命令
+        if cmd == "NICK":
+            irc_ref.send_raw(f"NICK {rest}" if rest else "NICK")
+        elif cmd == "JOIN":
+            irc_ref.send_raw(f"JOIN {rest}" if rest else "JOIN")
+        elif cmd == "PART":
+            irc_ref.send_raw(f"PART {rest}" if rest else f"PART {cfg.irc_channel}")
+        elif cmd == "QUIT":
+            irc_ref.send_raw(f"QUIT :{rest}" if rest else "QUIT")
+        elif cmd == "MSG":
+            # /msg nick 消息内容
+            sp = rest.split(None, 1)
+            if len(sp) >= 2:
+                irc_ref.send_raw(f"PRIVMSG {sp[0]} :{sp[1]}")
+            elif sp:
+                irc_ref.send_raw(f"PRIVMSG {sp[0]} :")
+        elif cmd == "ME":
+            # /me 动作
+            irc_ref.send_raw(f"PRIVMSG {cfg.irc_channel} :\x01ACTION {rest}\x01")
+        elif cmd == "RAW":
+            # /raw 任意原始命令
+            irc_ref.send_raw(rest)
+        else:
+            # 其他命令直接按「命令 + 参数」发送
+            irc_ref.send_raw(f"{cmd} {rest}" if rest else cmd)
+        return True
+
     async def drain_lark_to_irc() -> None:
-        """Lark -> IRC: forward @mention replies."""
+        """Lark -> IRC: forward @mention replies; / 开头作为 IRC 命令执行。"""
         while True:
             for _open_id, text in lark.drain_received():
                 try:
-                    await irc_ref.send_privmsg(cfg.irc_channel, text)
+                    if not handle_lark_message(text):
+                        await irc_ref.send_privmsg(cfg.irc_channel, text)
                 except Exception as e:
                     logger.exception("IRC send: %s", e)
             await asyncio.sleep(0.2)
