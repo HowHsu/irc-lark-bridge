@@ -18,6 +18,7 @@ class Config:
     lark_chat_id: str = ""  # Lark group chat_id to send to
     lark_use_feishu: bool = False  # True = open.feishu.cn
     lark_domain: str = ""  # 可选覆盖，如 https://open.feishu.cn
+    lark_mention_only: bool = True  # False=转发群内所有消息，True=仅 @机器人 时
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -32,6 +33,7 @@ class Config:
             lark_chat_id=os.getenv("LARK_CHAT_ID", ""),
             lark_use_feishu=os.getenv("LARK_USE_FEISHU", "0").lower() in ("1", "true", "yes"),
             lark_domain=os.getenv("LARK_DOMAIN", ""),
+            lark_mention_only=os.getenv("LARK_MENTION_ONLY", "1").lower() in ("1", "true", "yes"),
         )
 
     def validate(self) -> list[str]:

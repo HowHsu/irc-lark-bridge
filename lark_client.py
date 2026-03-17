@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import re
 import threading
 from queue import Queue
 from typing import Callable
@@ -9,6 +10,15 @@ from typing import Callable
 import httpx
 
 logger = logging.getLogger(__name__)
+
+# Lark @提及占位符 @_user_N
+_RE_LARK_AT = re.compile(r"@_user_\d+\s*")
+
+
+def _strip_lark_at_placeholders(text: str) -> str:
+    """去除 Lark 群聊中的 @_user_N 占位符。"""
+    return _RE_LARK_AT.sub("", text).strip()
+
 
 # Lark International: open.larksuite.com
 # Feishu CN: open.feishu.cn
@@ -28,6 +38,7 @@ class LarkClient:
         chat_id: str,
         use_feishu: bool = False,
         lark_domain: str = "",
+        mention_only: bool = True,
         on_message: Callable[[str, str], None] | None = None,
     ):
         self.app_id = app_id
@@ -35,6 +46,7 @@ class LarkClient:
         self.chat_id = chat_id
         self.use_feishu = use_feishu
         self._domain_override = lark_domain
+        self._mention_only = mention_only
         self._base = FEISHU_BASE if use_feishu else LARK_BASE
         self._ws_base = FEISHU_WS_BASE if use_feishu else LARK_WS_BASE
         self._locale = "zh" if use_feishu else "en"
@@ -116,7 +128,7 @@ class LarkClient:
     def run_ws_thread(self) -> None:
         """Start Lark WebSocket. 使用原生实现（正确 locale），参考 Zeroclaw。"""
         bot_open_id = self._get_bot_open_id()
-        logger.info("Lark bot open_id: %s", bot_open_id or "(none)")
+        logger.info("Lark bot open_id: %s, chat_id: %s", bot_open_id or "(none)", self.chat_id)
 
         def _is_mention(ev: dict) -> bool:
             if not bot_open_id:
@@ -124,15 +136,22 @@ class LarkClient:
             msg = ev.get("event", {}).get("message", {})
             mentions = msg.get("mentions", [])
             for m in mentions:
-                oid = m.get("id", {}).get("open_id") or m.get("open_id")
+                oid = (
+                    (m.get("id") or {}).get("open_id")
+                    or m.get("open_id")
+                    or (m.get("id") if isinstance(m.get("id"), str) else None)
+                )
                 if oid == bot_open_id:
                     return True
+            # post 富文本中的 @
             content = msg.get("content", "{}")
             if isinstance(content, str):
                 try:
                     c = json.loads(content)
-                    if "post" in c:
-                        return True
+                    for elem in (c.get("elements") or []):
+                        for run in (elem.get("elements") or []):
+                            if run.get("text_run", {}).get("style", {}).get("link", {}).get("url", "").startswith("https://open.feishu.cn/client/contact/user/"):
+                                return True
                 except json.JSONDecodeError:
                     pass
             return False
@@ -142,10 +161,15 @@ class LarkClient:
                 ev_body = ev.get("event", {})
                 msg = ev_body.get("message", {})
                 chat_id = msg.get("chat_id", "")
-                if chat_id != self.chat_id:
-                    return
                 chat_type = msg.get("chat_type", "")
-                if chat_type == "group" and not _is_mention(ev):
+                logger.debug("Lark event: chat_id=%s (expect %s), chat_type=%s", chat_id, self.chat_id, chat_type)
+                if chat_id != self.chat_id:
+                    logger.debug("Lark: skip (chat_id mismatch)")
+                    return
+                if self._mention_only and chat_type == "group" and not _is_mention(ev):
+                    mids = [(m.get("id") or {}).get("open_id") or m.get("open_id") for m in msg.get("mentions", [])]
+                    logger.info("Lark: skip (need @mention bot, bot=%s, mentions=%s, or LARK_MENTION_ONLY=0)",
+                                bot_open_id, mids)
                     return
                 content = msg.get("content", "{}")
                 if isinstance(content, str):
@@ -156,11 +180,15 @@ class LarkClient:
                         text = content
                 else:
                     text = str(content)
+                # 去除 Lark @提及占位符 @_user_N
+                text = _strip_lark_at_placeholders(text)
                 if not text:
+                    logger.debug("Lark: skip (empty text)")
                     return
                 sender = ev_body.get("sender", {})
                 sid = sender.get("sender_id", {})
                 open_id = sid.get("open_id", "?")
+                logger.info("Lark -> IRC: forwarding %r", text[:50])
                 self._received_queue.put((open_id, text))
                 self.on_message(open_id, text)
             except Exception as e:

@@ -38,6 +38,42 @@ def nick_from_prefix(prefix: str | None) -> str | None:
     return prefix.split("!")[0] if "!" in prefix else prefix
 
 
+def strip_irc_codes(text: str) -> str:
+    """去除 IRC 颜色和格式码，保留空格、括号等正常字符。"""
+    out = []
+    i = 0
+    n = len(text)
+    while i < n:
+        c = text[i]
+        if c == "\x03":  # 颜色
+            i += 1
+            if i < n and text[i].isdigit():
+                i += 1
+                if i < n and text[i].isdigit():
+                    i += 1
+            if i < n and text[i] == ",":
+                i += 1
+                if i < n and text[i].isdigit():
+                    i += 1
+                    if i < n and text[i].isdigit():
+                        i += 1
+            continue
+        if c == "\x04":  # 十六进制颜色 RRGGBB
+            i += 1
+            for _ in range(6):
+                if i < n and text[i] in "0123456789abcdefABCDEF":
+                    i += 1
+                else:
+                    break
+            continue
+        if c in "\x02\x0f\x11\x16\x1d\x1e\x1f":  # 粗体/重置/等宽/反色/斜体/删除线/下划线
+            i += 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out).strip()
+
+
 class IrcClient:
     def __init__(
         self,

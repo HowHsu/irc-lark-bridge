@@ -138,6 +138,8 @@ async def run_lark_ws(
                     continue
                 if ev.get("header", {}).get("event_type") != "im.message.receive_v1":
                     continue
+                logger.debug("Lark WS: received im.message.receive_v1 chat_id=%s",
+                             ev.get("event", {}).get("message", {}).get("chat_id"))
 
                 # ACK（需在 3 秒内，参考 Zeroclaw）
                 ack = Frame()

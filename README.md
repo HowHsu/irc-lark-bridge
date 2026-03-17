@@ -29,6 +29,8 @@ python3 -m venv .venv
 | `LARK_CHAT_ID` | 目标 Lark 群聊 chat_id | |
 | `LARK_USE_FEISHU` | 1=使用飞书国内版 (open.feishu.cn) | `0` |
 | `LARK_DOMAIN` | 可选，覆盖域名，如 `https://open.feishu.cn` | |
+| `LARK_MENTION_ONLY` | 1=仅转发 @机器人 的消息，0=转发群内所有消息 | `1` |
+| `DEBUG` | 1=开启 DEBUG 日志 | |
 
 ### 获取 LARK_CHAT_ID
 
@@ -47,6 +49,17 @@ python3 -m venv .venv
 2. 权限：`im:message`、`im:message:send_as_bot`、`im:message.group_at_msg`
 3. 事件订阅：`im.message.receive_v1`，选择 **使用长连接接收事件**
 4. 将机器人加入目标群
+
+### 在 Lark 中 @IRC 频道里的人
+
+IRC 没有原生 @提及。在 Lark 发消息时，若要指定某位 IRC 用户，可在消息中直接写其昵称，例如：`willy: 你好` 或 `willy, 你的问题...`。该用户会在 IRC 频道中看到自己的昵称被提及。
+
+### Lark @机器人 无法转发到 IRC
+
+1. 确认 Lark 应用权限已开启「群聊中 @机器人 时接收消息」
+2. 确认机器人已加入目标群
+3. 临时设置 `LARK_MENTION_ONLY=0` 测试（转发群内所有消息）
+4. 开启 `DEBUG=1` 查看日志中的 chat_id、mentions 是否匹配
 
 ### 报错 "Incorrect domain name"
 

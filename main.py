@@ -2,6 +2,7 @@
 """IRC-Lark bridge: #bitcoin-core-dev <-> Lark group."""
 import asyncio
 import logging
+import os
 import signal
 import sys
 
@@ -10,7 +11,7 @@ from irc_client import IrcClient
 from lark_client import LarkClient
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG if os.getenv("DEBUG") else logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
@@ -25,7 +26,10 @@ async def run_bridge(cfg: Config, lark: LarkClient) -> None:
     def on_irc_privmsg(sender: str, target: str, msg: str) -> None:
         """IRC -> Lark: forward channel messages."""
         try:
-            lark.send_text(f"[IRC] <{sender}> {msg}")
+            from irc_client import strip_irc_codes
+            clean = strip_irc_codes(msg)
+            if clean:
+                lark.send_text(f"[IRC] <{sender}> {clean}")
         except Exception as e:
             logger.exception("Lark send: %s", e)
 
@@ -43,7 +47,7 @@ async def run_bridge(cfg: Config, lark: LarkClient) -> None:
         while True:
             for _open_id, text in lark.drain_received():
                 try:
-                    await irc_ref.send_privmsg(cfg.irc_channel, f"[Lark] {text}")
+                    await irc_ref.send_privmsg(cfg.irc_channel, text)
                 except Exception as e:
                     logger.exception("IRC send: %s", e)
             await asyncio.sleep(0.2)
@@ -68,6 +72,7 @@ def main() -> int:
         chat_id=cfg.lark_chat_id,
         use_feishu=cfg.lark_use_feishu,
         lark_domain=cfg.lark_domain,
+        mention_only=cfg.lark_mention_only,
     )
     # 必须在主事件循环启动之前启动 Lark 线程，否则 lark-oapi 会获取到主循环
     lark.run_ws_thread()
